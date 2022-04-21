@@ -8,6 +8,7 @@ import { EventIterable } from "event-iterable";
 
 import { FolderDeletionWatcher } from "./FolderDeletionWatcher";
 import { isDirectory, sleep } from "./Functions";
+import { create } from "domain";
 
 /** @module MountMonitor */
 
@@ -233,15 +234,38 @@ async function getNewState():Promise<FileSystem[]> {
             SystemInformation.fsSize(),
         ] );
 
-    let deviceMap:{[device:string]:SystemInformation.Systeminformation.BlockDevicesData} = devices.reduce( (R, dev) => ( {...R, [dev.name]:dev } ), {} );
+    return sortFilesystems( createMountedFileSystemsList( filesystems, devices ) );
 
+}
+
+function createMountedFileSystemsList( filesystems: SystemInformation.Systeminformation.FsSizeData[], devices: SystemInformation.Systeminformation.BlockDevicesData[] ): FileSystem[] {
+    
+    const deviceMap:{[device:string]:SystemInformation.Systeminformation.BlockDevicesData} = devices.reduce( (R, dev) => ( {...R, [dev.name]:dev } ), {} );
     const filteredFileSystems = filesystems
         .filter( (fs) => IGNORED_MOUNT_POINTS_REGEX[ process.platform as "darwin"|"linux"|"win32" ].every( regEx => regEx.test(fs.mount)===false ) )
         .filter( (fs) => String(fs.size)!=='' )
         .filter( (fs) => deviceMap[fs.fs]===undefined || deviceMap[fs.fs].protocol!=="Disk Image" )
     ;
 
-    const unsortedState = filteredFileSystems.map<FileSystem>( ( filesystem ) => ( {
+    if( process.platform ==="win32" ) {
+        return filteredFileSystems.map<FileSystem>( ( filesystem ) => ( {
+            device: filesystem.fs,
+            label: deviceMap[filesystem.fs] ? deviceMap[filesystem.fs].label : filesystem.fs.split(Path.sep).pop()!,
+            filesystem: deviceMap[filesystem.fs].physical!=="Network" ? filesystem.type : "SMB",
+            model: undefined,
+            mountpoint: filesystem.mount,
+            mounted: true,
+            protocol: deviceMap[filesystem.fs].physical!=="Network" ? deviceMap[filesystem.fs].physical : "SMB",
+            serial: deviceMap[filesystem.fs] && deviceMap[filesystem.fs].serial!=="" ? deviceMap[filesystem.fs].serial : undefined,
+            size: {
+                available: filesystem.available,
+                total: filesystem.size,
+                used: filesystem.used,
+            },
+            uuid: deviceMap[filesystem.fs] ? deviceMap[filesystem.fs].uuid.toLowerCase() : UUID.v5( filesystem.fs, UUID_NAMESPACE ),
+        } ) );
+    } else {
+        return filteredFileSystems.map<FileSystem>( ( filesystem ) => ( {
             device: filesystem.fs,
             label: deviceMap[filesystem.fs] ? deviceMap[filesystem.fs].label : filesystem.fs.split(Path.sep).pop()!,
             filesystem: deviceMap[filesystem.fs] ? filesystem.type : "SMB",
@@ -257,8 +281,7 @@ async function getNewState():Promise<FileSystem[]> {
             },
             uuid: deviceMap[filesystem.fs] ? deviceMap[filesystem.fs].uuid.toLowerCase() : UUID.v5( filesystem.fs, UUID_NAMESPACE ),
         } ) );
-
-    return sortFilesystems( unsortedState );
+    }
 
 }
 
