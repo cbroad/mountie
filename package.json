@@ -1,0 +1,47 @@
+{
+  "author": {
+    "name": "Carl Broadbent"
+  },
+  "bugs": {
+    "url": "https://github.com/cbroad/mountie/issues"
+  },
+  "dependencies": {
+    "event-iterable": "^1.0.0",
+    "node-abort-controller": "^3.0.1",
+    "systeminformation": "^5.11.12",
+    "uuid": "^8.3.2"
+  },
+  "description": "monitor filesystem mounting and unmounting",
+  "devDependencies": {
+    "@types/systeminformation": "^3.54.1",
+    "@types/uuid": "^8.3.4",
+    "rimraf": "^3.0.2",
+    "typescript": "^4.0.5"
+  },
+  "files": [
+    "js/*",
+    "types/*"
+  ],
+  "homepage": "https://github.com/cbroad/mountie#readme",
+  "keywords": [
+    "event",
+    "filesystem",
+    "mount"
+  ],
+  "license": "MIT",
+  "main": "js/Mountie.js",
+  "name": "mountie",
+  "productName": "Mountie",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cbroad/mountie.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf js node_modules package-lock.json types",
+    "prepare": "npm run build",
+    "unbuild": "rimraf js types"
+  },
+  "types": "./types/Mountie.d.ts",
+  "version": "0.0.1"
+}
