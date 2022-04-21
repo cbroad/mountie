@@ -13,6 +13,7 @@
   },
   "description": "monitor filesystem mounting and unmounting",
   "devDependencies": {
+    "@types/node": "^10.0.0",
     "@types/systeminformation": "^3.54.1",
     "@types/uuid": "^8.3.4",
     "rimraf": "^3.0.2",

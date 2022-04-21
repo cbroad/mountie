@@ -169,10 +169,14 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
     public filesystem( path:string ):FileSystem|undefined {
         return this.state
             .reduce<FileSystem|undefined>( (R,fs) => {
-                if(fs.mounted && ( !R || fs.mountpoint!.length>R!.mountpoint!.length ) ) {
-                    if( path.startsWith( fs.mountpoint! ) ) {
-                        return fs;
-                    }
+                if( fs.mounted &&
+                    ( 
+                        !R ||
+                        fs.mountpoint!.length>R!.mountpoint!.length
+                    ) &&
+                    path.startsWith( fs.mountpoint! )
+                ) {
+                    return fs;
                 }
                 return R;
             }, undefined );
