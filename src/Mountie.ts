@@ -89,10 +89,10 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
 
     async #monitor():Promise<void>
     {
-        while( this.#abortController ) {
+        while( this.#running ) {
             const startTime = new Date();
             const newState = await getNewState();
-            if( this.#abortController ) {
+            if( this.#running ) {
                 const events:FileSystemEvent[] = [];
                 const uuidFilesystemMap:{[uuid:string]:FileSystem} = newState.reduce( ( R, fs ) => ( { ...R, [ fs.uuid ]: fs } ) , {} );
             
@@ -126,9 +126,9 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
 
             const endTime = new Date();
 
-            if( this.#abortController ) {
+            if( this.#running ) {
                 const sleepDuration = Math.max( INTERVAL_LENGTH/2, INTERVAL_LENGTH-(endTime.getTime()-startTime.getTime()) );
-                await sleep( INTERVAL_LENGTH, this.#abortController.signal );
+                await sleep( INTERVAL_LENGTH, this.#abortController!.signal );
             }
         }
     }
@@ -163,7 +163,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
         delete deletionWatchers[ path ];
     }
 
-
+    get #running():boolean { return !!this.#abortController; }
     get state():readonly FileSystem[] { return sortFilesystems( Object.values( this.#filesystemMap ) ); }
 
     public filesystem( path:string ):FileSystem|undefined {
@@ -183,7 +183,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
     }
 
     public async nextRefresh():Promise<void> {
-        if( this.#abortController ) {
+        if( this.#running ) {
             return new Promise( resolve => this.once( "refresh", resolve ) );
         } else {
             throw new Error( "Mountie is not running" );
@@ -191,7 +191,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
     }
 
     public async start():Promise<void> {
-        if(this.#abortController === undefined)
+        if( this.#running===false )
         {
             this.on( "mount", this.#onMount );
             this.on( "rename", this.#onRename );
@@ -204,7 +204,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
     }
 
     public stop():void {
-        if(this.#abortController) {
+        if( this.#running ) {
             this.removeListener( "mount", this.#onMount );
             this.removeListener( "rename", this.#onRename );
             this.removeListener( "unmount", this.#onUnmount );
