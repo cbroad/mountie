@@ -239,7 +239,7 @@ async function getNewState():Promise<FileSystem[]> {
 }
 
 function createMountedFileSystemsList( filesystems: SystemInformation.Systeminformation.FsSizeData[], devices: SystemInformation.Systeminformation.BlockDevicesData[] ): FileSystem[] {
-    
+
     const deviceMap:{[device:string]:SystemInformation.Systeminformation.BlockDevicesData} = devices.reduce( (R, dev) => ( {...R, [dev.name]:dev } ), {} );
     const filteredFileSystems = filesystems
         .filter( (fs) => IGNORED_MOUNT_POINTS_REGEX[ process.platform as "darwin"|"linux"|"win32" ].every( regEx => regEx.test(fs.mount)===false ) )
@@ -262,7 +262,7 @@ function createMountedFileSystemsList( filesystems: SystemInformation.Systeminfo
                 total: filesystem.size,
                 used: filesystem.used,
             },
-            uuid: deviceMap[filesystem.fs] ? deviceMap[filesystem.fs].uuid.toLowerCase() : UUID.v5( filesystem.fs, UUID_NAMESPACE ),
+            uuid: deviceMap[filesystem.fs].uuid!=="" ? deviceMap[filesystem.fs].uuid.toLowerCase() : UUID.v5( filesystem.fs, UUID_NAMESPACE ),
         } ) );
     } else {
         return filteredFileSystems.map<FileSystem>( ( filesystem ) => ( {
