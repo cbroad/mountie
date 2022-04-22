@@ -8,7 +8,6 @@ import { EventIterable } from "event-iterable";
 
 import { FolderDeletionWatcher } from "./FolderDeletionWatcher";
 import { isDirectory, sleep } from "./Functions";
-import { create } from "domain";
 
 /** @module MountMonitor */
 
@@ -33,11 +32,11 @@ export type FileSystem = {
     device: string,
     label: string,
     filesystem: string,
-    model: string|undefined,
-    mountpoint: string|undefined,
+    model?: string|undefined,
+    mountpoint?: string|undefined,
     mounted: boolean,
     protocol: string,
-    serial: string|undefined,
+    serial?: string|undefined,
     size: {
         available: number,
         total: number,
@@ -59,7 +58,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
 
 
     #abortController:AbortController|undefined;
-    #filesystemMap:{[key:string]:FileSystem} = {};
+    #mountedMap:{[key:string]:FileSystem} = {};
 
     public constructor() {
         super();
@@ -68,13 +67,20 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
         this.#onUnmount.bind(this);
     }
 
+    get mounted():readonly FileSystem[] {return sortFilesystems( Object.values( this.#mountedMap ) ); };
+    get running():boolean { return !!this.#abortController; }
+
+
     *[Symbol.iterator]():Iterator<FileSystem, any, undefined> {
-        for( const filesystem of this.state ) {
+        for( const filesystem of this.mounted ) {
             yield filesystem;
         }
     }
 
     async* [Symbol.asyncIterator](): AsyncIterator<FileSystemEvent, any, undefined> {
+        if( !this.running ) {
+            await this.start();
+        }
 
         for( const filesystem of this ) {
             yield { filesystem, type: "mount" };
@@ -100,7 +106,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
                 await Promise.all(
                     newState.map( async ( filesystem:FileSystem )=> {
                         const path = filesystem.mountpoint!;
-                        const oldFilesystem = this.#filesystemMap[ path ];
+                        const oldFilesystem = this.#mountedMap[ path ];
                         if( await isDirectory( path ) && oldFilesystem===undefined ) {
                             events.push( { filesystem, type: "mount" } );
                         }
@@ -108,7 +114,7 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
                 );
             
                 // for( const oldFilesystem of this.state ) {
-                for( const oldFilesystem of this.state ) {
+                for( const oldFilesystem of this.mounted ) {
                     const filesystem = uuidFilesystemMap[ oldFilesystem.uuid ];
                     if( filesystem===undefined ) {
                         events.push( { filesystem:oldFilesystem, type: "unmount" } );
@@ -136,9 +142,9 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
 
     #onMount( event:FileSystemMountEvent ):void {
         const path = event.filesystem.mountpoint!;
-        this.#filesystemMap[ path ] = event.filesystem;
+        this.#mountedMap[ path ] = event.filesystem;
         deletionWatchers[ path ] = new FolderDeletionWatcher( path, () => {
-            const filesystem = this.#filesystemMap[ path ];
+            const filesystem = this.#mountedMap[ path ];
             if( filesystem ) {
                 const event: FileSystemUnmountEvent = { filesystem, type:"unmount" };
                 this.emit( "unmount",  event );
@@ -159,32 +165,23 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
 
     #onUnmount( event:FileSystemUnmountEvent ):void {
         const path = event.filesystem.mountpoint!;
-        delete this.#filesystemMap[ path ];
+        delete this.#mountedMap[ path ];
         deletionWatchers[ path ].stop();
         delete deletionWatchers[ path ];
     }
 
-    get running():boolean { return !!this.#abortController; }
-    get state():readonly FileSystem[] { return sortFilesystems( Object.values( this.#filesystemMap ) ); }
-
     public filesystem( path:string ):FileSystem|undefined {
-        return this.state
-            .reduce<FileSystem|undefined>( (R,fs) => {
-                if( fs.mounted &&
-                    ( 
-                        !R ||
-                        fs.mountpoint!.length>R!.mountpoint!.length
-                    ) &&
-                    path.startsWith( fs.mountpoint! )
-                ) {
-                    return fs;
+        return Object.entries( this.#mountedMap )
+            .reduce<FileSystem|undefined>( (R, [ mountPath, filesystem ] ) => {
+                if( ( !R || mountPath.length>R!.mountpoint!.length ) && path.startsWith( mountPath ) ) {
+                    return filesystem;
                 }
                 return R;
             }, undefined );
     }
 
     public isMounted( path:string ):boolean {
-        return this.state.some( drive => drive.mountpoint===path );
+        return this.mounted.some( drive => drive.mountpoint===path );
     }
 
     public async nextRefresh():Promise<void> {
@@ -198,11 +195,11 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
     public async start():Promise<void> {
         if( this.running===false )
         {
+            this.#abortController = new AbortController();
             this.on( "mount", this.#onMount );
             this.on( "rename", this.#onRename );
             this.on( "unmount", this.#onUnmount );
-            this.#abortController = new AbortController();
-            this.#filesystemMap = {};
+            this.#mountedMap = {};
             this.#monitor();
             return this.nextRefresh();
         }
@@ -210,16 +207,16 @@ export class Mountie extends EventEmitter implements AsyncIterable<FileSystemEve
 
     public stop():void {
         if( this.running ) {
+            this.#abortController?.abort();
+            this.#abortController = undefined;;
             this.removeListener( "mount", this.#onMount );
             this.removeListener( "rename", this.#onRename );
             this.removeListener( "unmount", this.#onUnmount );
-            this.#abortController?.abort();
-            this.#abortController = undefined;;
         }
     }
 
     public async waitForSetup():Promise<void> {
-        while( this.state.length===0 ) {
+        while( this.mounted.length===0 ) {
             await this.nextRefresh();
         }
     }
@@ -250,13 +247,13 @@ function createMountedFileSystemsList( filesystems: SystemInformation.Systeminfo
     if( process.platform ==="win32" ) {
         return filteredFileSystems.map<FileSystem>( ( filesystem ) => ( {
             device: filesystem.fs,
-            label: deviceMap[filesystem.fs] ? deviceMap[filesystem.fs].label : filesystem.fs.split(Path.sep).pop()!,
+            label: deviceMap[filesystem.fs].label!=="" ? deviceMap[filesystem.fs].label : filesystem.fs.split(Path.sep).pop()!,
             filesystem: deviceMap[filesystem.fs].physical!=="Network" ? filesystem.type : "SMB",
             model: undefined,
             mountpoint: filesystem.mount,
             mounted: true,
             protocol: deviceMap[filesystem.fs].physical!=="Network" ? deviceMap[filesystem.fs].physical : "SMB",
-            serial: deviceMap[filesystem.fs] && deviceMap[filesystem.fs].serial!=="" ? deviceMap[filesystem.fs].serial : undefined,
+            serial: deviceMap[filesystem.fs].serial!=="" ? deviceMap[filesystem.fs].serial : undefined,
             size: {
                 available: filesystem.available,
                 total: filesystem.size,

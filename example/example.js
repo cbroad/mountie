@@ -2,7 +2,6 @@ const { Mountie } = require( ".." );
 
 (async function main() {
     const mountie = new Mountie();
-    await mountie.start();
 
     // await mountie.nextRefresh();
 
